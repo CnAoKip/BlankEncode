@@ -1,109 +1,114 @@
-import sys, os, chardet
+import os, chardet
+from sys import argv
 
 
-# 默认字典
-default_charset = [chr(ch) for ch in range(0x2000, 0x2010)] # 这些字符全为不可见的，有的是特殊空格，有的是 Unicode 操纵字符
+# 默认编码字符集
+default_charset = [chr(ch) for ch in range(0x2000, 0x2010)] + ['utf-8'] # 这些字符全为不可见的，有的是特殊空格，有的是 Unicode 操纵字符
 encode_suffix = ""
 decode_suffix = ""
 
 
 is_valid_charset = lambda charset: len(set(charset)) == len(charset)
 
-def encode(input: bytes, charset: list) -> str:
+def encode(input: bytes, charset: list) -> (str, str):
+    '''使用charset对input进行编码，返回二元字符串元组。
+    返回值：元组（编码结果，字符集编码类型）
+    '''
     encoded_str = ""
     for b in input:
         encoded_str += charset[b>>4]  # 先转码二进制的高四位，对应2位16进制数的第一位
         encoded_str += charset[b&0xf] # 再转码二进制的低四位，对应2位16进制数的第二位
+    charset_encoding = charset[-1]
+    return encoded_str, charset_encoding
 
-    return encoded_str
 
-
-def decode(input: str, charset: list) -> bytes:
-    decoded_bytes = bytes() // b''
+def decode(input: bytes, charset: list) -> (str, str):
+    '''使用charset对input进行解码，返回二元字符串元组。
+    返回值：元组（解码结果，结果编码类型）
+    '''
+    encoded_encoding = chardet.detect(input)["encoding"]
+    input = str(input, encoding=encoded_encoding)
+    decoded_bytes = bytes() # b''
     try:
         for i in range(0, len(input), 2):
             h = charset.index(input[i])
-            l = charset.index(input[i+1])  # 从字典查找并且拼凑出原先的字节
+            l = charset.index(input[i+1])  # 从编码字符集查找并且拼凑出原先的字节
             decoded_bytes += bytes([(h<<4)|l])
     except ValueError:
-        print("字典与加密内容不匹配！")
-        return bytes()
-    return decoded_bytes
+        print("编码字符集与加密内容不匹配！")
+        return '', 'utf-8'
+    decoded_encoding = chardet.detect(decoded_bytes)["encoding"]
+    return str(decoded_bytes, encoding=decoded_encoding), decoded_encoding
 
 
-def transcode_file(dictPath:str, encodePath:str, decodePath:str):
-    dicto = list()
+def transcode_file(charset_path='', encode_path='', decode_path='') -> None:
+    '''通用的解码/编码函数，给定encode_path则解码至.dec文件，给定decode_path则编码至.enc文件
+    给定charset_path，则使用自定义的字符集进行编码
+    '''
+    charset = list() # []
     mode = -1  # 0=Encode 1=Decode
-    dicto_encoding = "utf-8" # 默认为 UTF-8
+    charset_encoding = "utf-8" # 默认为 UTF-8
     try:
-        if(len(dictPath) == 0): dicto = default_charset # 未指定字典时采用默认的“空白字符”字典
+        if(charset_path == ''): 
+            charset = default_charset # 未指定编码字符集时采用默认的“空白字符”编码字符集
         else:
-            with open(dictPath, "rb") as dictFile:
-                dictBytes = dictFile.read(16)
-                dicto_encoding = chardet.detect(dictBytes)["encoding"] # 判断字典编码
-                dicto = list(str(dictBytes, encoding=dicto_encoding))
+            with open(charset_path, "rb") as charset_file:
+                charset_bytes = charset_file.read(16)
+                charset_encoding = chardet.detect(charset_bytes)["encoding"] # 判断编码字符集编码
+                charset = list(str(charset_bytes, encoding=charset_encoding)) + [charset_encoding]
 
-        if(len(encodePath) == 0):
+        if(encode_path == ''):
             mode = 0
-            encodePath = "result.enc."+encode_suffix
-        if(len(decodePath) == 0):
-            if(mode == 0): sys.exit(4)
+            encode_path = "result.enc" + encode_suffix
+        if(decode_path == ''):
+            if(mode == 0): exit(4)
             mode = 1
-            decodePath = "result.dec."+decode_suffix
+            decode_path = "result.dec" + decode_suffix
 
-        if(os.path.exists(decodePath)):
+        if(os.path.exists(decode_path)):
             mode = 0
-        if(os.path.exists(encodePath)):
-            if(mode == 0): sys.exit(4) # 不覆写
+        if(os.path.exists(encode_path)):
+            if(mode == 0): exit(4) # 不覆写
             mode = 1
+
+        # 没想好这个函数怎么命名
+        def perform_io(input_path: str, output_path: str, encode_func):
+            with open(input_path, 'rb') as input_file:
+                input_bytes = input_file.read()
+            encoded, encoding = encode_func(input_bytes, charset)
+            with open(output_path, 'w', encoding=encoding) as output_file:
+                output_file.write(encoded)
 
         if(mode == 0):
-            with open(decodePath, "rb") as decodedFile:
-                decodedBytes = decodedFile.read()
-                decodedFile.close()
-                encoded = encode(decodedBytes,dicto)
-            with open(encodePath, "w", encoding=dicto_encoding) as encodedFile: # “加密”后文件应与字典编码一致
-                encodedFile.write(encoded)
-                encodedFile.close()
-                sys.exit(0)
+            perform_io(decode_path, encode_path, encode)
 
         if(mode == 1):
-            with open(encodePath, "rb") as encodedFile:
-                encodedBytes = encodedFile.read()
-                encodedFile.close()
-                encoded_encoding = chardet.detect(encodedBytes)["encoding"]
-                decoded = decode(str(encodedBytes, encoding = encoded_encoding), dicto)
-
-            with open(decodePath, "wb") as decodedFile:
-                decodedFile.write(decoded)
-                decodedFile.close()
-                sys.exit(0)
+            perform_io(encode_path, decode_path, decode)
     except IOError:
         print("文件读写错误！")
 
 
 # 为了方便操作，待操作文件名（或扩展名）中需要一个修饰符。
-# 规则是文件名中含有.enc为待编码文件，.dec为待解码文件，.dict为字典文件。
+# 规则是文件名中含有.enc为待编码文件，.dec为待解码文件，.dict为编码字符集文件。
 if __name__ == "__main__":
-    dictPath = ""
-    encodePath = ""
-    decodePath = ""
-    argv = sys.argv
-    argc = len(argv)
-    if(argc < 2): # 打印帮助
-        print("用法：BlankCode.py input [dict][output]\n\
-其中，输入与两个可选参数文件名（或扩展名）中需要一个修饰符。规则是文件名中含有.enc为待解码文件，.dec为待编码文件，.dict为字典文件。\n\
-.enc 或 .dec 前（相邻）可以指定转码后默认文件扩展名，如 1.mp4.dec.html 编码后默认输出 result.enc.mp4。\n\
-字典内容应为无重复字符且长度为 16 的字符串。如果字典未指定，采用默认空白字典。")
-        os._exit(1)
-    for i in range(1, argc):
-        splited = ['']+argv[i].split('.') # 防止上来就是 .enc 这类导致问题的情况
-        if(splited.count("enc")):
-            encodePath = argv[i]
-            decode_suffix = splited[splited.index("enc") - 1]
-        if(argv[i].split('.').count("dec")):
-            decodePath = argv[i]
-            encode_suffix = splited[splited.index("dec") - 1]
-        if(argv[i].split('.').count("dict")): dictPath = argv[i]
+    charset_path = ""
+    encode_path = ""
+    decode_path = ""
+    # print(argv)
+    if(len(argv) < 2): # 打印帮助
+        print("""用法：BlankCode.py input [dict][output]
+其中，输入与两个可选参数文件名（或扩展名）中需要一个修饰符。规则是文件名中含有.enc为待解码文件，.dec为待编码文件，.dict为编码字符集文件。
+.enc 或 .dec 前（相邻）可以指定转码后默认文件扩展名，如 1.mp4.dec.html 编码后默认输出 result.enc.mp4。
+编码字符集内容应为无重复字符且长度为 16 的字符串。如果编码字符集未指定，采用默认空白编码字符集。""")
+        exit(0)
+    for path in argv[1:]:
+        if(".enc" in path):
+            encode_path = path
+            decode_suffix = path[path.index("."): path.index(".enc")]
+        if(".dec" in path):
+            decode_path = path
+            encode_suffix = path[path.index("."): path.index(".dec")]
+        if(".dict" in path): 
+            charset_path = path
 
-    transcode_file(dictPath, encodePath, decodePath)
+    transcode_file(charset_path, encode_path, decode_path)
