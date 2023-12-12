@@ -1,5 +1,10 @@
 # BlankEncode
 一个用不可见字符编码并藏匿文件的脚本
+## 安装依赖
+在终端键入如下命令：
+```cmd
+pip install -r requirements.txt
+```
 ## 用法
 输入与两个可选参数文件名（或扩展名）中需要一个修饰符。规则是文件名中含有.enc为待解码文件，.dec为待编码文件，.dict为字典文件。
 .enc 或 .dec 前（相邻）可以指定转码后默认文件扩展名，如 1.mp4.dec.html 编码后默认输出 result.enc.mp4。
