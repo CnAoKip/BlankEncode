@@ -39,6 +39,9 @@ def decode(input: bytes, charset: list) -> tuple:
     except ValueError:
         print("编码字符集与加密内容不匹配！")
         return '', 'utf-8'
+    except IndexError:
+        print("字符串长度错误,编码字符集与字符串长度不匹配!")
+        return '', 'utf-8'
     decoded_encoding = chardet.detect(decoded_bytes)["encoding"]
     return str(decoded_bytes, encoding=decoded_encoding), decoded_encoding
 
