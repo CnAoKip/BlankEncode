@@ -1,5 +1,7 @@
 import os, chardet
 from sys import argv
+from pyperclip import copy as copy_to_clip
+from pyperclip import paste as paste_from_clip
 
 
 # 默认编码字符集
@@ -10,7 +12,7 @@ decode_suffix = ""
 
 is_valid_charset = lambda charset: len(set(charset)) == len(charset)
 
-def encode(input: bytes, charset: list) -> (str, str):
+def encode(input: bytes, charset: list) -> tuple:
     '''使用charset对input进行编码，返回二元字符串元组。
     返回值：元组（编码结果，字符集编码类型）
     '''
@@ -22,7 +24,7 @@ def encode(input: bytes, charset: list) -> (str, str):
     return encoded_str, charset_encoding
 
 
-def decode(input: bytes, charset: list) -> (str, str):
+def decode(input: bytes, charset: list) -> tuple:
     '''使用charset对input进行解码，返回二元字符串元组。
     返回值：元组（解码结果，结果编码类型）
     '''
@@ -95,12 +97,36 @@ if __name__ == "__main__":
     encode_path = ""
     decode_path = ""
     # print(argv)
-    if(len(argv) < 2): # 打印帮助
-        print("""用法：BlankCode.py input [dict][output]
+    if len(argv) == 1 or '-h' in argv or '-help' in argv: # 打印帮助
+        print("""- 基本用法：blank_encode.py input [dict][output]
 其中，输入与两个可选参数文件名（或扩展名）中需要一个修饰符。规则是文件名中含有.enc为待解码文件，.dec为待编码文件，.dict为编码字符集文件。
 .enc 或 .dec 前（相邻）可以指定转码后默认文件扩展名，如 1.mp4.dec.html 编码后默认输出 result.enc.mp4。
-编码字符集内容应为无重复字符且长度为 16 的字符串。如果编码字符集未指定，采用默认空白编码字符集。""")
+编码字符集内容应为无重复字符且长度为 16 的字符串。如果编码字符集未指定，采用默认空白编码字符集。
+- 快速用法：blank_encode.py [-encode text] [-decode text] [--encode-clip] [--decode-clip]""")
         exit(0)
+    
+    if '-encode' in argv:
+        decoded = encode(bytes(argv[argv.index('-encode')+1], encoding='utf-8'), default_charset)[0]
+        copy_to_clip(decoded)
+        print(f"已复制编码结果到剪切板: [{decoded}]")
+        exit(0)
+    elif '-decode' in argv:
+        # print(list(argv[argv.index('-decode')+1]))
+        decoded = decode(bytes(argv[argv.index('-decode')+1], encoding='utf-8'), default_charset)[0]
+        copy_to_clip(decoded)
+        print(f"已复制解码结果到剪切板: [{decoded}]")
+        exit(0)
+    elif '--encode-clip' in argv:
+        decoded = encode(bytes(paste_from_clip(), encoding='utf-8'), default_charset)[0]
+        copy_to_clip(decoded)
+        print(f"已复制编码结果到剪切板: [{decoded}]")
+        exit(0)
+    elif '--decode-clip' in argv:
+        decoded = decode(bytes(paste_from_clip(), encoding='utf-8'), default_charset)[0]
+        copy_to_clip(decoded)
+        print(f"已复制解码结果到剪切板: [{decoded}]")
+        exit(0)
+    
     for path in argv[1:]:
         if(".enc" in path):
             encode_path = path
